@@ -101,6 +101,10 @@ func (p *Producer) GetTrack(media *core.Media, codec *core.Codec) (*core.Receive
 		return nil, err
 	}
 
+	if p.gopCache() {
+		track.EnableGOPCache()
+	}
+
 	p.receivers = append(p.receivers, track)
 
 	if p.state == stateMedias {
@@ -140,6 +144,12 @@ func (p *Producer) MarshalJSON() ([]byte, error) {
 }
 
 // internals
+
+// gopCache reports whether the source asks for a GOP cache: rtsp://...#gop=1
+func (p *Producer) gopCache() bool {
+	_, rawQuery, ok := strings.Cut(p.url, "#")
+	return ok && ParseQuery(rawQuery).Get("gop") == "1"
+}
 
 func (p *Producer) start() {
 	p.mu.Lock()
@@ -215,6 +225,10 @@ func (p *Producer) reconnect(workerID, retry int) {
 				track, err := conn.GetTrack(media, codec)
 				if err != nil {
 					continue
+				}
+
+				if p.gopCache() {
+					track.EnableGOPCache()
 				}
 
 				receiver.Replace(track)

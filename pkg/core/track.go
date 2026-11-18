@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 
 	"github.com/pion/rtp"
 )
@@ -19,6 +20,8 @@ type Receiver struct {
 
 	Bytes   int `json:"bytes,omitempty"`
 	Packets int `json:"packets,omitempty"`
+
+	gop atomic.Pointer[gopCache]
 }
 
 func NewReceiver(media *Media, codec *Codec) *Receiver {
@@ -29,11 +32,44 @@ func NewReceiver(media *Media, codec *Codec) *Receiver {
 	r.Input = func(packet *Packet) {
 		r.Bytes += len(packet.Payload)
 		r.Packets++
+
+		if gop := r.gop.Load(); gop != nil {
+			// Cache update and fan-out snapshot happen under the same lock as AppendChild,
+			// so a new child gets every packet exactly once: either replayed or live.
+			r.mu.Lock()
+			gop.add(packet)
+			childs := r.childs
+			r.mu.Unlock()
+			for _, child := range childs {
+				child.Input(packet)
+			}
+			return
+		}
+
 		for _, child := range r.childs {
 			child.Input(packet)
 		}
 	}
 	return r
+}
+
+// EnableGOPCache keeps the latest group of pictures (from the last keyframe) for H264/H265
+// video and replays it to every newly attached consumer, so viewers joining a running stream
+// get a picture immediately instead of waiting for the next keyframe.
+func (r *Receiver) EnableGOPCache() {
+	if r.Codec == nil || (r.Codec.Name != CodecH264 && r.Codec.Name != CodecH265) {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.gop.Load() != nil {
+		return
+	}
+	gop := newGOPCache(r.Codec)
+	r.onAppend = gop.replay
+	r.gop.Store(gop)
 }
 
 // Deprecated: should be removed

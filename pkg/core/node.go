@@ -31,6 +31,11 @@ type Node struct {
 	childs []*Node
 	parent *Node
 
+	// onAppend runs under mu before a new child is added (used for the GOP cache replay)
+	onAppend func(child *Node)
+	// NoGOPReplay opts a child out of the GOP cache replay (see Receiver.EnableGOPCache)
+	NoGOPReplay bool
+
 	mu sync.Mutex
 }
 
@@ -41,6 +46,9 @@ func (n *Node) WithParent(parent *Node) *Node {
 
 func (n *Node) AppendChild(child *Node) {
 	n.mu.Lock()
+	if n.onAppend != nil {
+		n.onAppend(child)
+	}
 	n.childs = append(n.childs, child)
 	n.mu.Unlock()
 

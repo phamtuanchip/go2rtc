@@ -84,6 +84,24 @@ streams:
     - ffmpeg:camera3#video=h264#audio=opus#hardware
 ```
 
+## GOP cache
+
+A new viewer of a running stream normally waits for the next keyframe before the picture appears (up to the camera keyframe interval, often 2-10 seconds). With `#gop=1` go2rtc keeps the latest group of pictures (parameter sets + keyframe + following frames) for H264/H265 video and sends it to every new consumer first, so MSE / MP4 / WebRTC players and `api/frame.jpeg` get a picture immediately.
+
+Works best together with [preload](#preload-stream), so the stream is already running.
+
+```yaml
+preload:
+  camera1: "video"
+
+streams:
+  camera1: rtsp://192.168.1.100/stream#gop=1
+```
+
+- the replayed frames are slightly in the past, players catch up to live within a few seconds
+- RTSP consumers are not affected (they only receive packets after `PLAY`)
+- a GOP is cached only if it fits 2048 RTP packets (48 frames for non-RTP sources, e.g. MPEG-TS) and 8 MB, otherwise the stream behaves as without the cache
+
 ## Examples
 
 ```yaml

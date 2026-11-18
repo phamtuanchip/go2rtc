@@ -51,6 +51,9 @@ func (c *Conn) AddTrack(media *core.Media, codec *core.Codec, track *core.Receiv
 
 	// save original codec to sender (can have Codec.Name = ANY)
 	sender := core.NewSender(media, codec)
+	// RTSP clients only get packets after PLAY, a replayed GOP would be buffered or dropped
+	// before that and some clients (ffmpeg) start slower because of it
+	sender.NoGOPReplay = true
 	// important to send original codec for valid IsRTP check
 	sender.Handler = c.packetWriter(track.Codec, channel, codec.PayloadType)
 
